@@ -14,9 +14,9 @@ import gdown
 app = FastAPI()
 
 # ================================
-# API Key
+# API Key (can change later)
 # ================================
-API_KEY = "harish17varma632"
+API_KEY = os.getenv("API_KEY", "harish17varma632")
 
 # ================================
 # Model Setup (Google Drive)
@@ -24,9 +24,15 @@ API_KEY = "harish17varma632"
 MODEL_PATH = "best.pt"
 
 if not os.path.exists(MODEL_PATH):
-    gdown.download("https://drive.google.com/uc?id=1qYrTPvJyHg3Rd7zlN0L-xqV7TfB5Nv29", MODEL_PATH, quiet=False)
+    print("⬇️ Downloading model...")
+    gdown.download(
+        "https://drive.google.com/uc?id=1qYrTPvJyHg3Rd7zlN0L-xqV7TfB5Nv29",
+        MODEL_PATH,
+        quiet=False
+    )
 
 model = YOLO(MODEL_PATH)
+print("✅ Model Loaded Successfully")
 
 # ================================
 # Home Route
@@ -41,12 +47,16 @@ def home():
 @app.post("/detect/")
 def detect(youtube_url: str, x_api_key: str = Header(None)):
 
+    # 🔐 API Key Check
     if x_api_key != API_KEY:
         raise HTTPException(status_code=403, detail="Invalid API Key")
 
     try:
-        # Get video URL
+        # ================================
+        # Get Direct Video URL
+        # ================================
         ydl_opts = {'format': 'best[ext=mp4]', 'quiet': True}
+
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(youtube_url, download=False)
             video_url = info['url']
@@ -56,6 +66,9 @@ def detect(youtube_url: str, x_api_key: str = Header(None)):
         detections = []
         frame_count = 0
 
+        # ================================
+        # Process Video Frames
+        # ================================
         while cap.isOpened():
             ret, frame = cap.read()
             if not ret:
@@ -63,20 +76,30 @@ def detect(youtube_url: str, x_api_key: str = Header(None)):
 
             frame_count += 1
 
-            # 🔥 SPEED OPTIMIZATION (IMPORTANT)
+            # 🔥 Limit frames (Render safety)
+            if frame_count > 300:
+                break
+
+            # 🔥 Skip frames for speed
             if frame_count % 5 != 0:
                 continue
 
             results = model(frame)
 
-            labels = [model.names[int(c)] for c in results[0].boxes.cls]
+            # Safe label extraction
+            if results[0].boxes is not None:
+                labels = [model.names[int(c)] for c in results[0].boxes.cls]
+            else:
+                labels = []
 
-            # Store alerts
             alerts = []
+
             if "NO-Hardhat" in labels:
                 alerts.append("No Helmet")
+
             if "NO-Mask" in labels:
                 alerts.append("No Mask")
+
             if "NO-Safety Vest" in labels:
                 alerts.append("No Vest")
 
@@ -91,8 +114,8 @@ def detect(youtube_url: str, x_api_key: str = Header(None)):
         return {
             "status": "success",
             "total_frames_checked": frame_count,
-            "detections": detections[:20]   # limit output
+            "detections": detections[:20]
         }
 
     except Exception as e:
-        return {"error": str(e)}
+        return {"status": "error", "message": str(e)}
