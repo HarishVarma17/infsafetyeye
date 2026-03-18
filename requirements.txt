@@ -1,0 +1,6 @@
+fastapi
+uvicorn
+ultralytics
+opencv-python
+yt-dlp
+gdown
